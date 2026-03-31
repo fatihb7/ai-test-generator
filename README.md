@@ -1,17 +1,15 @@
 # AI Test Generator
 
-Form HTML'ini yapıştırın, Gemini AI ile otomatik Playwright veya Selenium test senaryosu üretin.
+Form HTML'ini veya JSON yapısını yapıştırın; HuggingFace ya da OpenAI modelleriyle otomatik **Playwright** veya **Selenium** Python test senaryosu üretin.
 
 ## Proje Yapısı
 
 ```
 ErikLabsCase/
-├── backend/          # Python FastAPI
+├── backend/              # Python FastAPI
 │   ├── main.py
-│   ├── pyproject.toml
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/         # React + Vite
+│   └── pyproject.toml
+├── frontend/             # React + Vite
 │   ├── src/
 │   │   ├── App.jsx
 │   │   ├── index.css
@@ -23,13 +21,7 @@ ErikLabsCase/
 
 ## Kurulum
 
-### 1. Gemini API Anahtarı Alın
-
-[Google AI Studio](https://aistudio.google.com/app/apikey) adresinden **ücretsiz** bir API anahtarı oluşturun.
-
----
-
-### 2. Backend Kurulumu
+### 1. Backend
 
 > **Ön koşul:** `uv` kurulu değilse önce yükleyin:
 > ```bash
@@ -39,22 +31,10 @@ ErikLabsCase/
 ```bash
 cd backend
 
-# Sanal ortam oluştur ve bağımlılıkları yükle (tek komut)
+# Sanal ortam oluştur ve bağımlılıkları yükle
 uv sync
 
-# .env dosyası oluştur
-cp .env.example .env
-```
-
-`.env` dosyasını açıp API anahtarınızı yazın:
-
-```env
-GEMINI_API_KEY=your_api_key_here
-```
-
-Sunucuyu başlatın:
-
-```bash
+# Sunucuyu başlat
 uv run uvicorn main:app --reload
 ```
 
@@ -62,15 +42,12 @@ Backend `http://localhost:8000` adresinde çalışmaya başlar.
 
 ---
 
-### 3. Frontend Kurulumu
+### 2. Frontend
 
 ```bash
 cd frontend
 
-# Bağımlılıkları yükle
 npm install
-
-# Geliştirme sunucusunu başlat
 npm run dev
 ```
 
@@ -80,11 +57,18 @@ Uygulama `http://localhost:5173` adresinde açılır.
 
 ## Kullanım
 
-1. Sol panele bir form HTML'i yapıştırın (veya **Örnek Yükle** butonuna tıklayın)
-2. **Playwright** veya **Selenium** arasından framework seçin
-3. **Test Üret** butonuna tıklayın
-4. Sağ panelde syntax-highlighted Python test kodu görünür
-5. **Kopyala** butonu ile kodu panoya alın
+1. **Sağlayıcı seçin** — HuggingFace veya OpenAI
+2. **Model seçin** — Seçilen sağlayıcıya göre otomatik listelenir
+3. **API anahtarınızı girin** — `hf_...` (HuggingFace) veya `sk-...` (OpenAI)
+4. Sol panele **form HTML'i** yapıştırın (veya **Örnek Yükle** butonunu kullanın)
+5. **Framework seçin** — Playwright veya Selenium
+6. **Test Üret** butonuna tıklayın
+7. Sağ panelde syntax-highlighted Python test kodu görünür
+8. **Kopyala** butonu ile kodu panoya alın
+
+> API anahtarı yalnızca istek sırasında backend'e iletilir; herhangi bir yerde saklanmaz.
+
+---
 
 ## API
 
@@ -94,7 +78,10 @@ Uygulama `http://localhost:5173` adresinde açılır.
 ```json
 {
   "html_content": "<form>...</form>",
-  "framework": "playwright"
+  "framework": "playwright",
+  "provider": "huggingface",
+  "api_key": "hf_...",
+  "model": "moonshotai/Kimi-K2-Instruct:novita"
 }
 ```
 
@@ -106,11 +93,20 @@ Uygulama `http://localhost:5173` adresinde açılır.
 }
 ```
 
+### `GET /health`
+
+```json
+{ "status": "ok" }
+```
+
+---
+
 ## Teknolojiler
 
-| Katman    | Teknoloji                        |
-|-----------|----------------------------------|
-| Backend   | Python, FastAPI, Uvicorn, uv     |
-| LLM       | Google Gemini 1.5 Flash (Ücretsiz) |
-| Frontend  | React 18, Vite                   |
-| Highlight | react-syntax-highlighter (Prism) |
+| Katman    | Teknoloji                                          |
+|-----------|----------------------------------------------------|
+| Backend   | Python 3.10+, FastAPI, Uvicorn, uv                 |
+| LLM       | HuggingFace Inference API veya OpenAI API          |
+| Modeller  | Kimi K2 Instruct (Novita), GPT-4o                  |
+| Frontend  | React 18, Vite 6                                   |
+| Highlight | react-syntax-highlighter (Prism / vscDarkPlus)     |
