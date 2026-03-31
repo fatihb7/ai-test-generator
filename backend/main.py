@@ -1,8 +1,26 @@
-from fastapi import FastAPI, HTTPException
+import logging
+import time
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger(__name__)
+
 app = FastAPI(title="Test Generator API", version="1.0.0")
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    ms = (time.perf_counter() - start) * 1000
+    log.info("%s %s → %d  (%.0fms)", request.method, request.url.path, response.status_code, ms)
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,8 +96,11 @@ async def generate_test(request: GenerateTestRequest):
         html_content=request.html_content.strip(),
     )
     messages = [{"role": "user", "content": prompt}]
+    log.info("Request → provider=%s  model=%s  framework=%s  html_chars=%d",
+             provider, request.model, framework, len(request.html_content.strip()))
 
     try:
+        t0 = time.perf_counter()
         if provider == "huggingface":
             from huggingface_hub import InferenceClient
             # "model/name:inference-provider" formatını destekle
@@ -102,6 +123,14 @@ async def generate_test(request: GenerateTestRequest):
                 model=request.model,
                 messages=messages,
             )
+
+        elapsed = (time.perf_counter() - t0) * 1000
+        usage = getattr(completion, "usage", None)
+        if usage:
+            log.info("Tokens → prompt=%s  completion=%s  total=%s  (%.0fms)",
+                     usage.prompt_tokens, usage.completion_tokens, usage.total_tokens, elapsed)
+        else:
+            log.info("LLM response received (%.0fms, no token info)", elapsed)
 
         generated_code = _strip_fences(completion.choices[0].message.content.strip())
         return {"code": generated_code, "framework": framework}
