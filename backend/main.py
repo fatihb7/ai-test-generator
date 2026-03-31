@@ -1,11 +1,6 @@
-import os
-import google.generativeai as genai
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = FastAPI(title="Test Generator API", version="1.0.0")
 
@@ -17,17 +12,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY environment variable is not set. Please check your .env file.")
-
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.0-flash")
-
 
 class GenerateTestRequest(BaseModel):
     html_content: str
     framework: str = "playwright"
+    provider: str = "huggingface"
+    api_key: str
+    model: str = "moonshotai/Kimi-K2-Instruct:novita"
 
 
 PROMPT_TEMPLATE = """
@@ -53,6 +44,19 @@ Requirements:
 """
 
 
+def _strip_fences(code: str) -> str:
+    if code.startswith("```"):
+        lines = code.splitlines()
+        start = 1
+        end = len(lines)
+        for i in range(len(lines) - 1, -1, -1):
+            if lines[i].strip() == "```":
+                end = i
+                break
+        return "\n".join(lines[start:end])
+    return code
+
+
 @app.post("/generate-test")
 async def generate_test(request: GenerateTestRequest):
     if not request.html_content.strip():
@@ -62,25 +66,44 @@ async def generate_test(request: GenerateTestRequest):
     if framework not in ("playwright", "selenium"):
         raise HTTPException(status_code=400, detail="framework must be 'playwright' or 'selenium'.")
 
+    provider = request.provider.lower()
+    if provider not in ("openai", "huggingface"):
+        raise HTTPException(status_code=400, detail="provider must be 'openai' or 'huggingface'.")
+
+    if not request.api_key.strip():
+        raise HTTPException(status_code=400, detail="API key cannot be empty.")
+
     prompt = PROMPT_TEMPLATE.format(
         framework=framework,
         html_content=request.html_content.strip(),
     )
+    messages = [{"role": "user", "content": prompt}]
 
     try:
-        response = model.generate_content(prompt)
-        generated_code = response.text.strip()
+        if provider == "huggingface":
+            from huggingface_hub import InferenceClient
+            # "model/name:inference-provider" formatını destekle
+            if ":" in request.model:
+                hf_model, hf_provider = request.model.rsplit(":", 1)
+            else:
+                hf_model, hf_provider = request.model, None
+            client = InferenceClient(
+                provider=hf_provider,
+                api_key=request.api_key,
+            )
+            completion = client.chat.completions.create(
+                model=hf_model,
+                messages=messages,
+            )
+        else:
+            from openai import OpenAI
+            client = OpenAI(api_key=request.api_key)
+            completion = client.chat.completions.create(
+                model=request.model,
+                messages=messages,
+            )
 
-        if generated_code.startswith("```"):
-            lines = generated_code.splitlines()
-            start = 1
-            end = len(lines)
-            for i in range(len(lines) - 1, -1, -1):
-                if lines[i].strip() == "```":
-                    end = i
-                    break
-            generated_code = "\n".join(lines[start:end])
-
+        generated_code = _strip_fences(completion.choices[0].message.content.strip())
         return {"code": generated_code, "framework": framework}
 
     except Exception as e:

@@ -190,6 +190,137 @@ body {
   gap: 6px;
 }
 
+/* ─── Settings Bar ───────────────────────────── */
+
+.settings-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--bg-border);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.settings-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.settings-group-model {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-group-key {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.model-select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 28px 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--bg-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  transition: border-color 0.15s;
+  max-width: 220px;
+}
+
+.model-select:hover,
+.model-select:focus {
+  border-color: #30363d;
+}
+
+.model-select option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.key-input-wrapper {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-base);
+  border: 1px solid var(--bg-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.key-input-wrapper:focus-within {
+  border-color: rgba(124, 58, 237, 0.5);
+}
+
+.settings-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.settings-input::placeholder {
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+}
+
+.key-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  height: 100%;
+  min-height: 28px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--bg-border);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.key-toggle-btn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
 /* ─── Textarea ────────────────────────────────── */
 
 .code-textarea {
@@ -594,5 +725,19 @@ body {
 
   .framework-selector {
     flex: 1;
+  }
+
+  .settings-row {
+    gap: 8px;
+  }
+
+  .settings-group-model,
+  .settings-group-key {
+    width: 100%;
+  }
+
+  .model-select {
+    max-width: 100%;
+    width: 100%;
   }
 }

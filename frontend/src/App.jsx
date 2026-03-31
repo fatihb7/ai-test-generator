@@ -1,8 +1,22 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 const API_URL = "http://localhost:8000";
+
+const MODEL_PRESETS = {
+  huggingface: [
+    { value: "moonshotai/Kimi-K2-Instruct-0905:novita", label: "Kimi K2 Instruct (Novita)" },
+  ],
+  openai: [
+    { value: "gpt-4o", label: "GPT-4o" },
+  ],
+};
+
+const PROVIDER_LABELS = {
+  huggingface: "HuggingFace",
+  openai: "OpenAI",
+};
 
 const EXAMPLE_HTML = `<form id="login-form" action="/login" method="POST">
   <h2>Giriş Yap</h2>
@@ -77,16 +91,43 @@ function CopyButton({ text }) {
   );
 }
 
+function EyeIcon({ open }) {
+  return open ? (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ) : (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
+      <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  );
+}
+
 export default function App() {
   const [htmlInput, setHtmlInput] = useState("");
   const [framework, setFramework] = useState("playwright");
+  const [provider, setProvider] = useState("huggingface");
+  const [model, setModel] = useState(MODEL_PRESETS.huggingface[0].value);
+  const [apiKey, setApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
   const [generatedCode, setGeneratedCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    setModel(MODEL_PRESETS[provider][0].value);
+  }, [provider]);
+
   const handleGenerate = useCallback(async () => {
     if (!htmlInput.trim()) {
       setError("Lütfen HTML veya JSON içeriği yapıştırın.");
+      return;
+    }
+    if (!apiKey.trim()) {
+      setError("Lütfen API anahtarınızı girin.");
       return;
     }
 
@@ -101,6 +142,9 @@ export default function App() {
         body: JSON.stringify({
           html_content: htmlInput,
           framework,
+          provider,
+          api_key: apiKey,
+          model,
         }),
       });
 
@@ -116,7 +160,7 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [htmlInput, framework]);
+  }, [htmlInput, framework, provider, apiKey, model]);
 
   const handleLoadExample = useCallback(() => {
     setHtmlInput(EXAMPLE_HTML);
@@ -128,6 +172,9 @@ export default function App() {
     setGeneratedCode("");
     setError("");
   }, []);
+
+  const providerLabel = PROVIDER_LABELS[provider];
+  const loadingText = `${providerLabel} test senaryoları üretiyor...`;
 
   return (
     <div className="app">
@@ -142,7 +189,7 @@ export default function App() {
             </div>
             <span className="logo-text">AI Test Generator</span>
           </div>
-          <div className="header-badge">Powered by Gemini</div>
+          <div className="header-badge">Powered by {providerLabel}</div>
         </div>
       </header>
 
@@ -166,6 +213,78 @@ export default function App() {
                 <button className="action-btn action-btn-ghost" onClick={handleClear} title="Temizle">
                   Temizle
                 </button>
+              </div>
+            </div>
+
+            {/* AI Settings Bar */}
+            <div className="settings-bar">
+              <div className="settings-row">
+                <div className="settings-group">
+                  <span className="settings-label">Sağlayıcı</span>
+                  <div className="toggle-group">
+                    <button
+                      className={`toggle-btn ${provider === "huggingface" ? "active" : ""}`}
+                      onClick={() => setProvider("huggingface")}
+                    >
+                      HuggingFace
+                    </button>
+                    <button
+                      className={`toggle-btn ${provider === "openai" ? "active" : ""}`}
+                      onClick={() => setProvider("openai")}
+                    >
+                      OpenAI
+                    </button>
+                  </div>
+                </div>
+
+                <div className="settings-group settings-group-model">
+                  <span className="settings-label">Model</span>
+                  <select
+                    className="model-select"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                  >
+                    {MODEL_PRESETS[provider].map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="settings-row">
+                <div className="settings-group settings-group-key">
+                  <span className="settings-label">
+                    {provider === "huggingface" ? "HF Token" : "API Key"}
+                  </span>
+                  <div className="key-input-wrapper">
+                    <input
+                      className="settings-input"
+                      type={showKey ? "text" : "password"}
+                      value={apiKey}
+                      onChange={(e) => {
+                        setApiKey(e.target.value);
+                        if (error) setError("");
+                      }}
+                      placeholder={
+                        provider === "huggingface"
+                          ? "HuggingFace Inference Token (hf_...)"
+                          : "OpenAI Inference Token (sk-...)"
+                      }
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                    <button
+                      className="key-toggle-btn"
+                      onClick={() => setShowKey((v) => !v)}
+                      title={showKey ? "Gizle" : "Göster"}
+                      type="button"
+                    >
+                      <EyeIcon open={showKey} />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -259,7 +378,7 @@ export default function App() {
                 <div className="placeholder loading-placeholder">
                   <div className="pulse-container">
                     <div className="pulse-dot" />
-                    <p>Gemini AI test senaryoları üretiyor...</p>
+                    <p>{loadingText}</p>
                   </div>
                   <div className="skeleton-lines">
                     {Array.from({ length: 12 }).map((_, i) => (
