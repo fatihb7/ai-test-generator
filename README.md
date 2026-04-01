@@ -8,14 +8,18 @@ Form HTML'ini veya JSON yapısını yapıştırın; HuggingFace ya da OpenAI mod
 ErikLabsCase/
 ├── backend/              # Python FastAPI
 │   ├── main.py
-│   └── pyproject.toml
+│   ├── pyproject.toml
+│   └── Dockerfile
 ├── frontend/             # React + Vite
 │   ├── src/
 │   │   ├── App.jsx
 │   │   ├── index.css
 │   │   └── main.jsx
 │   ├── index.html
-│   └── package.json
+│   ├── nginx.conf
+│   ├── package.json
+│   └── Dockerfile
+├── docker-compose.yml
 └── README.md
 ```
 
@@ -27,7 +31,6 @@ ErikLabsCase/
 > ```bash
 > curl -LsSf https://astral.sh/uv/install.sh | sh
 > ```
-
 ```bash
 cd backend
 
@@ -41,7 +44,6 @@ uv run uvicorn main:app --reload
 Backend `http://localhost:8000` adresinde çalışmaya başlar.
 
 ---
-
 ### 2. Frontend
 
 ```bash
@@ -52,6 +54,43 @@ npm run dev
 ```
 
 Uygulama `http://localhost:5173` adresinde açılır.
+
+---
+
+### 3. Docker ile Çalıştırma (Önerilen)
+
+> **Ön koşul:** Sisteminizde [Docker](https://docs.docker.com/get-docker/) ve Docker Compose kurulu olmalıdır.
+
+Proje kök dizininde tek komutla tüm servisleri ayağa kaldırabilirsiniz:
+
+```bash
+docker compose up --build
+```
+
+| Servis   | Adres                   |
+|----------|-------------------------|
+| Frontend | http://localhost:3000   |
+| Backend  | http://localhost:8000   |
+
+Servisleri arka planda (detached) çalıştırmak için:
+
+```bash
+docker compose up --build -d
+```
+
+Logları takip etmek için:
+
+```bash
+docker compose logs -f
+```
+
+Servisleri durdurmak için:
+
+```bash
+docker compose down
+```
+
+> **Not:** Frontend, production build olarak Nginx üzerinde sunulur. Backend API istekleri `/api/*` yolu üzerinden yönlendirilmez; frontend doğrudan `http://localhost:8000` adresini kullanır.
 
 ---
 
@@ -110,3 +149,4 @@ Uygulama `http://localhost:5173` adresinde açılır.
 | Modeller  | Kimi K2 Instruct (Novita), GPT-4o                  |
 | Frontend  | React 18, Vite 6                                   |
 | Highlight | react-syntax-highlighter (Prism / vscDarkPlus)     |
+| Container | Docker, Docker Compose, Nginx (frontend prod)       |
