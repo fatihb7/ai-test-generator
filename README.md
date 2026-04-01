@@ -2,6 +2,14 @@
 
 Form HTML'ini veya JSON yapısını yapıştırın; HuggingFace ya da OpenAI modelleriyle otomatik **Playwright** veya **Selenium** Python test senaryosu üretin.
 
+## Demo
+
+<video src="demo.mp4" controls width="100%"></video>
+
+> Uygulamanın temel akışını gösteren kısa bir tanıtım videosu. Form HTML'i yapıştırılıp model seçildikten sonra Playwright/Selenium test kodunun nasıl üretildiği adım adım görülebilir.
+
+---
+
 ## Proje Yapısı
 
 ```
@@ -123,6 +131,7 @@ docker compose down
   "model": "moonshotai/Kimi-K2-Instruct:novita"
 }
 ```
+
 
 **Response:**
 ```json
