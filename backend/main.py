@@ -31,12 +31,17 @@ app.add_middleware(
 )
 
 
+class FetchUrlRequest(BaseModel):
+    url: str
+
+
 class GenerateTestRequest(BaseModel):
     html_content: str
     framework: str = "playwright"
     provider: str = "huggingface"
     api_key: str
     model: str = "moonshotai/Kimi-K2-Instruct:novita"
+    page_url: str = ""
 
 
 PROMPT_TEMPLATE = """
@@ -46,7 +51,7 @@ HTML/Form Structure:
 ```html
 {html_content}
 ```
-
+Target URL: {page_url}
 Requirements:
 1. Generate a complete test file with all necessary imports
 2. Include at least these test cases:
@@ -57,7 +62,7 @@ Requirements:
 3. Use descriptive test function names in snake_case
 4. Add brief comments explaining each test scenario
 5. Use async/await syntax for Playwright or proper waits for Selenium
-6. Make the code ready to run without modifications (use placeholder URLs like "http://localhost:3000")
+6. Use the exact Target URL above in all page.goto() / driver.get() calls — do not use any placeholder URL.
 7. Return ONLY the Python code, no markdown fences, no explanations outside the code.
 """
 
@@ -73,6 +78,31 @@ def _strip_fences(code: str) -> str:
                 break
         return "\n".join(lines[start:end])
     return code
+
+
+@app.post("/fetch-url")
+async def fetch_url(request: FetchUrlRequest):
+    url = request.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="url cannot be empty.")
+
+    import httpx
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        )
+    }
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            return {"html": resp.text, "status_code": resp.status_code}
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Remote server returned {e.response.status_code}.")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach URL: {str(e)}")
 
 
 @app.post("/generate-test")
@@ -91,9 +121,11 @@ async def generate_test(request: GenerateTestRequest):
     if not request.api_key.strip():
         raise HTTPException(status_code=400, detail="API key cannot be empty.")
 
+    page_url = request.page_url.strip() or "http://localhost:3000"
     prompt = PROMPT_TEMPLATE.format(
         framework=framework,
         html_content=request.html_content.strip(),
+        page_url=page_url,
     )
     messages = [{"role": "user", "content": prompt}]
     log.info("Request → provider=%s  model=%s  framework=%s  html_chars=%d",

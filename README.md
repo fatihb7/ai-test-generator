@@ -107,17 +107,34 @@ docker compose down
 1. **Sağlayıcı seçin** — HuggingFace veya OpenAI
 2. **Model seçin** — Seçilen sağlayıcıya göre otomatik listelenir
 3. **API anahtarınızı girin** — `hf_...` (HuggingFace) veya `sk-...` (OpenAI)
-4. Sol panele **form HTML'i** yapıştırın (veya **Örnek Yükle** butonunu kullanın)
-5. **Framework seçin** — Playwright veya Selenium
-6. **Test Üret** butonuna tıklayın
-7. Sağ panelde syntax-highlighted Python test kodu görünür
-8. **Kopyala** butonu ile kodu panoya alın
+4. *(İsteğe bağlı)* **URL girin ve Çek butonuna tıklayın** — sayfa kaynağı otomatik olarak HTML giriş alanına doldurulur; üretilen testlerde bu URL kullanılır
+5. Sol panele **form HTML'i** yapıştırın (veya **Örnek Yükle** butonunu kullanın)
+6. **Framework seçin** — Playwright veya Selenium
+7. **Test Üret** butonuna tıklayın
+8. Sağ panelde syntax-highlighted Python test kodu görünür
+9. **Kopyala** butonu ile kodu panoya alın
 
 > API anahtarı yalnızca istek sırasında backend'e iletilir; herhangi bir yerde saklanmaz.
 
 ---
 
 ## API
+
+### `POST /fetch-url`
+
+Verilen URL'nin sayfa kaynağını çekip döndürür.
+
+**Request:**
+```json
+{ "url": "https://example.com/login" }
+```
+
+**Response:**
+```json
+{ "html": "<!DOCTYPE html>...", "status_code": 200 }
+```
+
+---
 
 ### `POST /generate-test`
 
@@ -128,10 +145,12 @@ docker compose down
   "framework": "playwright",
   "provider": "huggingface",
   "api_key": "hf_...",
-  "model": "moonshotai/Kimi-K2-Instruct:novita"
+  "model": "moonshotai/Kimi-K2-Instruct:novita",
+  "page_url": "https://test.com/login"
 }
 ```
 
+> `page_url` opsiyoneldir. Gönderilirse üretilen testlerde bu URL kullanılır; gönderilmezse `http://localhost:3000` varsayılan olarak alınır.
 
 **Response:**
 ```json

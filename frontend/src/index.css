@@ -741,3 +741,101 @@ body {
     width: 100%;
   }
 }
+
+/* ── URL Fetch Bar ───────────────────────────────────────── */
+.url-fetch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #0d1117;
+  border-bottom: 1px solid #21262d;
+}
+
+.url-input-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 0 10px;
+  transition: border-color 0.15s;
+}
+
+.url-input-wrapper:focus-within {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.12);
+}
+
+.url-icon {
+  color: #6e7681;
+  flex-shrink: 0;
+}
+
+.url-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e6edf3;
+  font-size: 12.5px;
+  font-family: inherit;
+  padding: 7px 0;
+  min-width: 0;
+}
+
+.url-input::placeholder {
+  color: #484f58;
+}
+
+.fetch-url-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: #238636;
+  color: #fff;
+  border: 1px solid #2ea043;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.fetch-url-btn:hover:not(:disabled) {
+  background: #2ea043;
+}
+
+.fetch-url-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.fetch-url-btn.loading {
+  background: #238636;
+}
+
+.spinner-sm {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.url-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: rgba(248, 81, 73, 0.08);
+  border-bottom: 1px solid rgba(248, 81, 73, 0.2);
+  color: #f85149;
+  font-size: 12px;
+}

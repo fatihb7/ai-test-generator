@@ -108,6 +108,9 @@ function EyeIcon({ open }) {
 
 export default function App() {
   const [htmlInput, setHtmlInput] = useState("");
+  const [urlInput, setUrlInput] = useState("");
+  const [isFetchingUrl, setIsFetchingUrl] = useState(false);
+  const [urlError, setUrlError] = useState("");
   const [framework, setFramework] = useState("playwright");
   const [provider, setProvider] = useState("huggingface");
   const [model, setModel] = useState(MODEL_PRESETS.huggingface[0].value);
@@ -145,6 +148,7 @@ export default function App() {
           provider,
           api_key: apiKey,
           model,
+          page_url: urlInput.trim(),
         }),
       });
 
@@ -172,6 +176,33 @@ export default function App() {
     setGeneratedCode("");
     setError("");
   }, []);
+
+  const handleFetchUrl = useCallback(async () => {
+    const url = urlInput.trim();
+    if (!url) {
+      setUrlError("Lütfen bir URL girin.");
+      return;
+    }
+    setIsFetchingUrl(true);
+    setUrlError("");
+    try {
+      const response = await fetch(`${API_URL}/fetch-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "URL çekilemedi.");
+      }
+      setHtmlInput(data.html);
+      setError("");
+    } catch (err) {
+      setUrlError(err.message || "URL çekilirken hata oluştu.");
+    } finally {
+      setIsFetchingUrl(false);
+    }
+  }, [urlInput]);
 
   const providerLabel = PROVIDER_LABELS[provider];
   const loadingText = `${providerLabel} test senaryoları üretiyor...`;
@@ -287,6 +318,61 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* URL Fetch Bar */}
+            <div className="url-fetch-bar">
+              <div className="url-input-wrapper">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="url-icon">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                  <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z" />
+                </svg>
+                <input
+                  className="url-input"
+                  type="url"
+                  value={urlInput}
+                  onChange={(e) => {
+                    setUrlInput(e.target.value);
+                    if (urlError) setUrlError("");
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && handleFetchUrl()}
+                  placeholder="https://example.com — sayfa kaynağını çek"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </div>
+              <button
+                className={`fetch-url-btn ${isFetchingUrl ? "loading" : ""}`}
+                onClick={handleFetchUrl}
+                disabled={isFetchingUrl}
+                title="Sayfa kaynağını çek"
+              >
+                {isFetchingUrl ? (
+                  <>
+                    <span className="spinner spinner-sm" />
+                    Çekiliyor...
+                  </>
+                ) : (
+                  <>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <polyline points="1 4 1 10 7 10" />
+                      <path d="M3.51 15a9 9 0 102.13-9.36L1 10" />
+                    </svg>
+                    Çek
+                  </>
+                )}
+              </button>
+            </div>
+            {urlError && (
+              <div className="url-error">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                {urlError}
+              </div>
+            )}
 
             <textarea
               className="code-textarea"
