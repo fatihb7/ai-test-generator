@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
@@ -56,6 +56,9 @@ const EXAMPLE_HTML = `<form id="login-form" action="/login" method="POST">
   <a href="/forgot-password">Şifremi Unuttum</a>
 </form>`;
 
+
+/* ─── Icons ─────────────────────────────────────── */
+
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
 
@@ -106,6 +109,223 @@ function EyeIcon({ open }) {
   );
 }
 
+function PlayIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+      <polygon points="5 3 19 12 5 21 5 3" />
+    </svg>
+  );
+}
+
+/* ─── Variable Modal ─────────────────────────────── */
+
+function VarModal({ requiredVars, onRun, onClose }) {
+  const [vars, setVars] = useState(() =>
+    (requiredVars || []).map((v) => ({
+      id: `${v.key}_${Math.random()}`,
+      key: v.key,
+      desc: v.desc || "",
+      value: "",
+      isManual: false,
+    }))
+  );
+
+  const updateVar = (id, field, val) =>
+    setVars((prev) => prev.map((v) => (v.id === id ? { ...v, [field]: val } : v)));
+
+  const addVar = () =>
+    setVars((prev) => [...prev, { id: `manual_${Math.random()}`, key: "", desc: "", value: "", isManual: true }]);
+
+  const removeVar = (id) => setVars((prev) => prev.filter((v) => v.id !== id));
+
+  const handleRun = () => {
+    const validVars = vars.filter((v) => v.key.trim());
+    const varMap = Object.fromEntries(validVars.map((v) => [v.key.trim(), v.value]));
+    onRun(varMap);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <div className="modal-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.07 4.93a10 10 0 010 14.14" />
+              <path d="M4.93 4.93a10 10 0 000 14.14" />
+            </svg>
+            Değişken Değerlerini Girin
+          </div>
+          <button className="modal-close" onClick={onClose} title="Kapat">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <p className="modal-subtitle">
+          LLM tarafından tespit edilen değişkenler aşağıda listelenmiştir. Gerçek değerleri girerek testi çalıştırın; boş bırakılanlar orijinal placeholder ile çalışır.
+        </p>
+
+        <div className="var-list">
+          {vars.length === 0 && (
+            <p className="var-empty">LLM bu test için değişken bildirmedi. Manuel olarak ekleyebilirsiniz.</p>
+          )}
+          {vars.map((v) => (
+            <div key={v.id} className="var-row">
+              <div className="var-key-col">
+                {!v.isManual ? (
+                  <>
+                    <span className="var-key-label">{v.key}</span>
+                    {v.desc && <span className="var-key-desc">{v.desc}</span>}
+                  </>
+                ) : (
+                  <input
+                    className="var-key-input"
+                    value={v.key}
+                    onChange={(e) => updateVar(v.id, "key", e.target.value)}
+                    placeholder="placeholder_adı"
+                    spellCheck={false}
+                  />
+                )}
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="var-arrow">
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
+              </svg>
+              <input
+                className="var-value-input"
+                value={v.value}
+                onChange={(e) => updateVar(v.id, "value", e.target.value)}
+                placeholder={`${v.key} için gerçek değer…`}
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button className="var-remove" onClick={() => removeVar(v.id)} title="Kaldır">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button className="var-add-btn" onClick={addVar}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          Değişken Ekle
+        </button>
+
+        <div className="modal-actions">
+          <button className="modal-cancel-btn" onClick={onClose}>Vazgeç</button>
+          <button className="modal-run-btn" onClick={handleRun}>
+            <PlayIcon />
+            Çalıştır
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Run Output Panel ───────────────────────────── */
+
+function RunOutput({ output, isRunning, runStatus, retryCount }) {
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [output, isRunning]);
+
+  if (!isRunning && !output) return null;
+
+  return (
+    <div className="run-output-panel">
+      <div className="run-output-header">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="4 17 10 11 4 5" />
+          <line x1="12" y1="19" x2="20" y2="19" />
+        </svg>
+        <span>Terminal Çıktısı</span>
+        {isRunning && (
+          <span className="run-status-badge running">
+            <span className="spinner spinner-sm" />
+            {runStatus}
+          </span>
+        )}
+        {!isRunning && output && (
+          <span className={`run-status-badge ${output.success ? "success" : "failed"}`}>
+            {output.success ? (
+              <>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Başarılı
+              </>
+            ) : (
+              <>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+                Başarısız
+              </>
+            )}
+            {output.attempts > 1 && (
+              <span className="attempt-info">· {output.attempts} / {retryCount} deneme</span>
+            )}
+          </span>
+        )}
+      </div>
+      <div className="run-output-body">
+        {isRunning && !output && (
+          <span className="run-output-waiting">Çalışıyor, lütfen bekleyin...</span>
+        )}
+        {output?.stdout && (
+          <pre className="run-output-stdout">{output.stdout}</pre>
+        )}
+        {output?.stderr && (
+          <pre className="run-output-stderr">{output.stderr}</pre>
+        )}
+        {!isRunning && output && !output.stdout && !output.stderr && (
+          <span className="run-output-waiting">Çıktı yok.</span>
+        )}
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+/* ─── Retry Control ──────────────────────────────── */
+
+function RetryControl({ value, onChange }) {
+  return (
+    <div className="retry-control" title="Hata durumunda LLM ile otomatik düzeltme denemesi">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="1 4 1 10 7 10" />
+        <path d="M3.51 15a9 9 0 102.13-9.36L1 10" />
+      </svg>
+      <span className="retry-label">Tekrar:</span>
+      <button
+        className="retry-adj"
+        onClick={() => onChange(Math.max(1, value - 1))}
+        title="Azalt"
+      >−</button>
+      <span className="retry-count">{value}</span>
+      <button
+        className="retry-adj"
+        onClick={() => onChange(Math.min(10, value + 1))}
+        title="Artır"
+      >+</button>
+    </div>
+  );
+}
+
+/* ─── App ────────────────────────────────────────── */
+
 export default function App() {
   const [htmlInput, setHtmlInput] = useState("");
   const [urlInput, setUrlInput] = useState("");
@@ -120,9 +340,22 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Run feature state
+  const [retryCount, setRetryCount] = useState(3);
+  const [isRunning, setIsRunning] = useState(false);
+  const [runStatus, setRunStatus] = useState("");
+  const [runOutput, setRunOutput] = useState(null);
+  const [showVarModal, setShowVarModal] = useState(false);
+  const [requiredVars, setRequiredVars] = useState([]);
+
   useEffect(() => {
     setModel(MODEL_PRESETS[provider][0].value);
   }, [provider]);
+
+  // Reset run output when new code is generated
+  useEffect(() => {
+    setRunOutput(null);
+  }, [generatedCode]);
 
   const handleGenerate = useCallback(async () => {
     if (!htmlInput.trim()) {
@@ -159,12 +392,13 @@ export default function App() {
       }
 
       setGeneratedCode(data.code);
+      setRequiredVars(data.required_vars || []);
     } catch (err) {
       setError(err.message || "Bağlantı hatası. Backend'in çalıştığından emin olun.");
     } finally {
       setIsLoading(false);
     }
-  }, [htmlInput, framework, provider, apiKey, model]);
+  }, [htmlInput, framework, provider, apiKey, model, urlInput]);
 
   const handleLoadExample = useCallback(() => {
     setHtmlInput(EXAMPLE_HTML);
@@ -175,6 +409,8 @@ export default function App() {
     setHtmlInput("");
     setGeneratedCode("");
     setError("");
+    setRunOutput(null);
+    setRequiredVars([]);
   }, []);
 
   const handleFetchUrl = useCallback(async () => {
@@ -203,6 +439,95 @@ export default function App() {
       setIsFetchingUrl(false);
     }
   }, [urlInput]);
+
+  /** Run the generated code with variable substitutions and LLM-based retry on error */
+  const handleRunWithVars = useCallback(async (variables) => {
+    setShowVarModal(false);
+    setIsRunning(true);
+    setRunOutput(null);
+
+    let codeToRun = generatedCode;
+
+    for (let attempt = 1; attempt <= retryCount; attempt++) {
+      setRunStatus(`Çalışıyor… (${attempt} / ${retryCount})`);
+
+      let runData;
+      try {
+        const runResp = await fetch(`${API_URL}/run-test`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: codeToRun, variables }),
+        });
+        runData = await runResp.json();
+        if (!runResp.ok) {
+          throw new Error(runData.detail || "Test çalıştırılamadı.");
+        }
+      } catch (err) {
+        setRunOutput({ success: false, stdout: "", stderr: err.message, attempts: attempt });
+        break;
+      }
+
+      if (runData.success) {
+        setRunOutput({ success: true, stdout: runData.stdout, stderr: runData.stderr, attempts: attempt });
+        setGeneratedCode(codeToRun);
+        break;
+      }
+
+      // On last attempt — give up
+      if (attempt >= retryCount) {
+        setRunOutput({ success: false, stdout: runData.stdout, stderr: runData.stderr, attempts: attempt });
+        setGeneratedCode(codeToRun);
+        break;
+      }
+
+      // Try to fix with LLM
+      if (!apiKey.trim()) {
+        setRunOutput({
+          success: false,
+          stdout: runData.stdout,
+          stderr: (runData.stderr || "") + "\n\n[API anahtarı girilmediğinden otomatik düzeltme yapılamadı.]",
+          attempts: attempt,
+        });
+        setGeneratedCode(codeToRun);
+        break;
+      }
+
+      setRunStatus(`LLM ile düzeltiliyor… (${attempt} / ${retryCount})`);
+
+      try {
+        const errorText = [runData.stderr, runData.stdout].filter(Boolean).join("\n");
+        const fixResp = await fetch(`${API_URL}/fix-test`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code: codeToRun,
+            error: errorText,
+            framework,
+            provider,
+            api_key: apiKey,
+            model,
+          }),
+        });
+        const fixData = await fixResp.json();
+        if (!fixResp.ok) {
+          throw new Error(fixData.detail || "LLM düzeltme başarısız.");
+        }
+        codeToRun = fixData.code;
+        setGeneratedCode(fixData.code);
+      } catch (err) {
+        setRunOutput({
+          success: false,
+          stdout: runData.stdout,
+          stderr: (runData.stderr || "") + `\n\n[LLM düzeltme hatası: ${err.message}]`,
+          attempts: attempt,
+        });
+        break;
+      }
+    }
+
+    setRunStatus("");
+    setIsRunning(false);
+  }, [generatedCode, retryCount, framework, provider, apiKey, model]);
 
   const providerLabel = PROVIDER_LABELS[provider];
   const loadingText = `${providerLabel} test senaryoları üretiyor...`;
@@ -456,7 +781,30 @@ export default function App() {
                   <span className="framework-tag">{framework}</span>
                 )}
               </div>
-              {generatedCode && <CopyButton text={generatedCode} />}
+              {generatedCode && (
+                <div className="right-panel-actions">
+                  <RetryControl value={retryCount} onChange={setRetryCount} />
+                  <CopyButton text={generatedCode} />
+                  <button
+                    className={`run-btn ${isRunning ? "loading" : ""}`}
+                    onClick={() => setShowVarModal(true)}
+                    disabled={isRunning}
+                    title="Test kodunu çalıştır"
+                  >
+                    {isRunning ? (
+                      <>
+                        <span className="spinner spinner-sm" />
+                        Çalışıyor...
+                      </>
+                    ) : (
+                      <>
+                        <PlayIcon />
+                        Çalıştır
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="output-area">
@@ -519,9 +867,25 @@ export default function App() {
                 </SyntaxHighlighter>
               )}
             </div>
+
+            <RunOutput
+              output={runOutput}
+              isRunning={isRunning}
+              runStatus={runStatus}
+              retryCount={retryCount}
+            />
           </section>
         </div>
       </main>
+
+      {/* Variable Modal */}
+      {showVarModal && (
+        <VarModal
+          requiredVars={requiredVars}
+          onRun={handleRunWithVars}
+          onClose={() => setShowVarModal(false)}
+        />
+      )}
     </div>
   );
 }

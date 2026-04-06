@@ -113,6 +113,10 @@ docker compose down
 7. **Test Üret** butonuna tıklayın
 8. Sağ panelde syntax-highlighted Python test kodu görünür
 9. **Kopyala** butonu ile kodu panoya alın
+10. *(İsteğe bağlı)* **Çalıştır** butonuna tıklayın — test kodu doğrudan backend üzerinde çalıştırılır
+    - LLM'in kullandığı placeholder değerler (ör. `valid_username`, `valid_password`) bir modal aracılığıyla istenir
+    - Test başarısız olursa uygulama, LLM'e hatayı göndererek kodu otomatik düzeltip belirlenen deneme sayısı kadar yeniden çalıştırır
+    - Çıktı (stdout/stderr) sağ panelin altındaki terminal görünümünde gösterilir
 
 > API anahtarı yalnızca istek sırasında backend'e iletilir; herhangi bir yerde saklanmaz.
 
@@ -156,9 +160,70 @@ Verilen URL'nin sayfa kaynağını çekip döndürür.
 ```json
 {
   "code": "import pytest\nfrom playwright...",
+  "framework": "playwright",
+  "required_vars": [
+    { "key": "valid_username", "desc": "Geçerli kullanıcı adı" },
+    { "key": "valid_password", "desc": "Geçerli şifre" }
+  ]
+}
+```
+
+> `required_vars`: LLM'in test kodunda kullandığı placeholder değerlerin listesi. Frontend bu listeyi kullanarak kullanıcıdan gerçek değerleri bir modal ile ister.
+
+---
+
+### `POST /run-test`
+
+Test kodunu backend üzerinde çalıştırır. `variables` içindeki anahtar-değer çiftleri, kod içindeki placeholder string'lerle birebir değiştirilir.
+
+**Request:**
+```json
+{
+  "code": "import pytest\n...",
+  "variables": {
+    "valid_username": "john",
+    "valid_password": "secret123"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "stdout": "...",
+  "stderr": "",
+  "returncode": 0
+}
+```
+
+---
+
+### `POST /fix-test`
+
+Başarısız olan test kodunu ve hata çıktısını LLM'e göndererek düzeltilmiş kod döndürür.
+
+**Request:**
+```json
+{
+  "code": "import pytest\n...",
+  "error": "ModuleNotFoundError: No module named 'playwright'",
+  "framework": "playwright",
+  "provider": "huggingface",
+  "api_key": "hf_...",
+  "model": "moonshotai/Kimi-K2-Instruct-0905:novita"
+}
+```
+
+**Response:**
+```json
+{
+  "code": "import pytest\nfrom playwright...",
   "framework": "playwright"
 }
 ```
+
+---
 
 ### `GET /health`
 

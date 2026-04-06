@@ -1,4 +1,9 @@
+import json
 import logging
+import os
+import subprocess
+import sys
+import tempfile
 import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,6 +49,38 @@ class GenerateTestRequest(BaseModel):
     page_url: str = ""
 
 
+class RunTestRequest(BaseModel):
+    code: str
+    variables: dict = {}
+
+
+class FixTestRequest(BaseModel):
+    code: str
+    error: str
+    framework: str = "playwright"
+    provider: str = "huggingface"
+    api_key: str
+    model: str = "moonshotai/Kimi-K2-Instruct-0905:novita"
+
+
+FIX_PROMPT_TEMPLATE = """
+You are an expert QA automation engineer. The following {framework} Python test code produced an error when executed. Fix the code so it runs without errors.
+
+Code:
+```python
+{code}
+```
+
+Error Output:
+{error}
+
+Requirements:
+1. Fix all syntax errors, import errors, and runtime errors shown above
+2. Keep the same test structure and test scenarios
+3. Do not change the logic of the tests, only fix the errors
+4. Return ONLY the fixed Python code, no markdown fences, no explanations outside the code.
+"""
+
 PROMPT_TEMPLATE = """
 You are an expert QA automation engineer. Analyze the following HTML form structure and generate a complete, production-ready {framework} test script in Python.
 
@@ -52,6 +89,7 @@ HTML/Form Structure:
 {html_content}
 ```
 Target URL: {page_url}
+
 Requirements:
 1. Generate a complete test file with all necessary imports
 2. Include at least these test cases:
@@ -63,7 +101,13 @@ Requirements:
 4. Add brief comments explaining each test scenario
 5. Use async/await syntax for Playwright or proper waits for Selenium
 6. Use the exact Target URL above in all page.goto() / driver.get() calls — do not use any placeholder URL.
-7. Return ONLY the Python code, no markdown fences, no explanations outside the code.
+7. For any user-supplied value the test needs (e.g. credentials, emails, names), use a short snake_case placeholder string (e.g. 'valid_username', 'valid_password', 'test_email'). Do NOT hard-code real credentials.
+8. On the very FIRST line of your response output this special comment (valid JSON array) listing every placeholder you used:
+   # TESTVARS: [{{"key": "valid_username", "desc": "Geçerli kullanıcı adı"}}, {{"key": "valid_password", "desc": "Geçerli şifre"}}]
+   - "key" must exactly match the placeholder string used in send_keys() / fill() / type() calls.
+   - "desc" should be a short Turkish description so the user knows what to enter.
+   - If no user-supplied values are needed, output: # TESTVARS: []
+9. After that first line, output ONLY the Python code — no markdown fences, no explanations outside the code.
 """
 
 
@@ -78,6 +122,38 @@ def _strip_fences(code: str) -> str:
                 break
         return "\n".join(lines[start:end])
     return code
+
+
+TESTVARS_PREFIX = "# TESTVARS:"
+
+def _parse_testvars(code: str) -> tuple[str, list]:
+    """Extract the leading '# TESTVARS: [...]' line from LLM output.
+
+    Returns (cleaned_code, required_vars_list).
+    required_vars_list items: {"key": str, "desc": str}
+    """
+    lines = code.splitlines()
+    required_vars: list = []
+
+    # The TESTVARS line might be the very first non-empty line
+    insert_idx = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(TESTVARS_PREFIX):
+            json_part = stripped[len(TESTVARS_PREFIX):].strip()
+            try:
+                parsed = json.loads(json_part)
+                if isinstance(parsed, list):
+                    required_vars = parsed
+            except Exception:
+                log.warning("Failed to parse TESTVARS JSON: %s", json_part)
+            insert_idx = i + 1
+        break  # only check the first non-empty line
+
+    cleaned = "\n".join(lines[insert_idx:]).lstrip("\n")
+    return cleaned, required_vars
 
 
 @app.post("/fetch-url")
@@ -164,11 +240,108 @@ async def generate_test(request: GenerateTestRequest):
         else:
             log.info("LLM response received (%.0fms, no token info)", elapsed)
 
-        generated_code = _strip_fences(completion.choices[0].message.content.strip())
-        return {"code": generated_code, "framework": framework}
+        raw = _strip_fences(completion.choices[0].message.content.strip())
+        generated_code, required_vars = _parse_testvars(raw)
+        log.info("TESTVARS detected: %s", [v.get("key") for v in required_vars])
+        return {"code": generated_code, "framework": framework, "required_vars": required_vars}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
+
+
+@app.post("/run-test")
+async def run_test(request: RunTestRequest):
+    if not request.code.strip():
+        raise HTTPException(status_code=400, detail="code cannot be empty.")
+
+    code = request.code
+    for placeholder, value in request.variables.items():
+        if value:
+            code = code.replace(f"'{placeholder}'", f"'{value}'")
+            code = code.replace(f'"{placeholder}"', f'"{value}"')
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+        f.write(code)
+        tmp_path = f.name
+
+    try:
+        result = subprocess.run(
+            [sys.executable, tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        log.info(
+            "run-test → returncode=%d  stdout=%d chars  stderr=%d chars",
+            result.returncode,
+            len(result.stdout),
+            len(result.stderr),
+        )
+        return {
+            "success": result.returncode == 0,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode,
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "success": False,
+            "stdout": "",
+            "stderr": "Test zaman aşımına uğradı (120 saniye).",
+            "returncode": -1,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+@app.post("/fix-test")
+async def fix_test(request: FixTestRequest):
+    if not request.code.strip():
+        raise HTTPException(status_code=400, detail="code cannot be empty.")
+    if not request.api_key.strip():
+        raise HTTPException(status_code=400, detail="api_key cannot be empty.")
+
+    framework = request.framework.lower()
+    provider = request.provider.lower()
+
+    if provider not in ("openai", "huggingface"):
+        raise HTTPException(status_code=400, detail="provider must be 'openai' or 'huggingface'.")
+
+    prompt = FIX_PROMPT_TEMPLATE.format(
+        framework=framework,
+        code=request.code.strip(),
+        error=request.error.strip(),
+    )
+    messages = [{"role": "user", "content": prompt}]
+    log.info("fix-test → provider=%s  model=%s  framework=%s", provider, request.model, framework)
+
+    try:
+        t0 = time.perf_counter()
+        if provider == "huggingface":
+            from huggingface_hub import InferenceClient
+            if ":" in request.model:
+                hf_model, hf_provider = request.model.rsplit(":", 1)
+            else:
+                hf_model, hf_provider = request.model, None
+            client = InferenceClient(provider=hf_provider, api_key=request.api_key)
+            completion = client.chat.completions.create(model=hf_model, messages=messages)
+        else:
+            from openai import OpenAI
+            client = OpenAI(api_key=request.api_key)
+            completion = client.chat.completions.create(model=request.model, messages=messages)
+
+        elapsed = (time.perf_counter() - t0) * 1000
+        log.info("fix-test LLM response (%.0fms)", elapsed)
+
+        fixed_code = _strip_fences(completion.choices[0].message.content.strip())
+        return {"code": fixed_code, "framework": framework}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM fix failed: {str(e)}")
 
 
 @app.get("/health")
