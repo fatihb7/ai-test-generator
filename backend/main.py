@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -52,6 +53,7 @@ class GenerateTestRequest(BaseModel):
 class RunTestRequest(BaseModel):
     code: str
     variables: dict = {}
+    framework: str = "playwright"
 
 
 class FixTestRequest(BaseModel):
@@ -108,6 +110,11 @@ Requirements:
    - "desc" should be a short Turkish description so the user knows what to enter.
    - If no user-supplied values are needed, output: # TESTVARS: []
 9. After that first line, output ONLY the Python code — no markdown fences, no explanations outside the code.
+10. Every test MUST contain at least one real, executable assertion (e.g. assert, expect, wait_for_selector, wait_for_url). NEVER leave assertions as comments. A test without a real assertion is useless and will always pass even if the page is broken.
+    - For success cases: assert a URL change, a success message selector, or a dashboard element.
+    - For error/validation cases: assert an error message element is visible on the page.
+    - Use page.wait_for_selector() or page.locator().wait_for() to wait for elements before asserting.
+    - Do NOT write lines like "# await page.wait_for_selector(...)" — execute them for real.
 """
 
 
@@ -156,29 +163,110 @@ def _parse_testvars(code: str) -> tuple[str, list]:
     return cleaned, required_vars
 
 
+def _selenium_fetch(url: str) -> str:
+    """Selenium headless Chrome ile sayfayı tam render edip HTML kaynağını döndürür."""
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.support.ui import WebDriverWait
+
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument(
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    )
+
+    driver = webdriver.Chrome(options=options)
+    try:
+        driver.get(url)
+        WebDriverWait(driver, 15).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        time.sleep(2)
+        return driver.page_source
+    finally:
+        driver.quit()
+
+
+def _extract_form_elements(html: str) -> str:
+    """HTML'den sadece form/input elementlerini çıkarır, gereksiz tag ve attribute'ları siler.
+
+    Bu fonksiyon LLM'e gönderilecek token sayısını önemli ölçüde azaltır.
+    Aynı zamanda sadece test yazımı için gerekli yapıyı korur.
+    """
+    from bs4 import BeautifulSoup, Comment
+
+    soup = BeautifulSoup(html, "lxml")
+
+    # Test yazımıyla ilgisi olmayan tag'leri tamamen sil
+    for tag in soup(["script", "style", "svg", "img", "video", "audio",
+                      "iframe", "noscript", "link", "meta", "head",
+                      "canvas", "picture", "source"]):
+        tag.decompose()
+
+    # HTML yorumlarını kaldır
+    for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+        comment.extract()
+
+    # Sadece test için anlamlı attribute'ları tut
+    KEEP_ATTRS = {
+        "id", "name", "type", "placeholder", "class", "required",
+        "href", "action", "method", "value", "for", "aria-label",
+        "data-testid", "role", "autocomplete", "min", "max",
+        "pattern", "minlength", "maxlength", "multiple",
+        "checked", "selected", "disabled", "readonly",
+    }
+    for element in soup.find_all(True):
+        for attr in [a for a in list(element.attrs) if a not in KEEP_ATTRS]:
+            del element[attr]
+
+    # Önce <form> elementlerine bak
+    forms = soup.find_all("form")
+    if forms:
+        result = "\n\n".join(str(f) for f in forms)
+        log.info("_extract_form_elements → %d form bulundu, %d chars", len(forms), len(result))
+        return result
+
+    # Form yoksa input/select/textarea içeren parent'ları topla
+    inputs = soup.find_all(["input", "select", "textarea", "button"])
+    if inputs:
+        seen = set()
+        parts = []
+        for inp in inputs:
+            parent = inp.parent
+            pid = id(parent) if parent else None
+            if pid and pid not in seen:
+                seen.add(pid)
+                parts.append(str(parent))
+        result = "\n\n".join(parts)
+        log.info("_extract_form_elements → form yok, %d parent blok, %d chars", len(parts), len(result))
+        return result
+
+    # Fallback: body'nin ilk 15000 karakteri
+    body = soup.find("body")
+    content = str(body) if body else str(soup)
+    log.warning("_extract_form_elements → form/input bulunamadı, fallback %d chars", len(content))
+    return content[:15000]
+
+
 @app.post("/fetch-url")
 async def fetch_url(request: FetchUrlRequest):
     url = request.url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="url cannot be empty.")
 
-    import httpx
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        )
-    }
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            return {"html": resp.text, "status_code": resp.status_code}
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"Remote server returned {e.response.status_code}.")
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Could not reach URL: {str(e)}")
+        raw_html = await asyncio.to_thread(_selenium_fetch, url)
+        compressed = _extract_form_elements(raw_html)
+        log.info("fetch-url → url=%s  raw_chars=%d  compressed_chars=%d",
+                 url, len(raw_html), len(compressed))
+        return {"html": compressed, "status_code": 200}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Selenium fetch failed: {str(e)}")
 
 
 @app.post("/generate-test")
@@ -265,8 +353,12 @@ async def run_test(request: RunTestRequest):
         tmp_path = f.name
 
     try:
+        cmd = [
+            sys.executable, "-m", "pytest", tmp_path,
+            "-v", "-s", "--tb=short", "--no-header",
+        ]
         result = subprocess.run(
-            [sys.executable, tmp_path],
+            cmd,
             capture_output=True,
             text=True,
             timeout=120,
